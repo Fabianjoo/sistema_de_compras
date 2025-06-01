@@ -7,163 +7,109 @@ conexao = mysql.connector.connect(
     password="1234",
     database="loja"
 )
-
 cursor = conexao.cursor()
-carrinho = []
 
-def adicionar_produtos():
-    # Produtos disponíveis com nome, preço e estoque limite
-    produtos_disponiveis = {
-        "celular": (1500.00, 20),
-        "notebook": (3000.00, 10),
-        "fones": (200.00, 50),
-        "carregador": (80.00, 35)
-    }
-
-    # Mostra os produtos disponíveis (somente print)
-    print("\nProdutos disponíveis:")
-    for nome, (preco, estoque) in produtos_disponiveis.items():
-        print(f"- {nome} | R$ {preco:.2f} | Estoque disponível: {estoque}")
-
-    nome = input("\nDigite o nome do produto que deseja adicionar ao banco: ").lower()
-
-    if nome not in produtos_disponiveis:
-        print("Produto inválido. Esse produto não está disponível para cadastro.\n")
-        return
-
-    preco, estoque_disponivel = produtos_disponiveis[nome]
-
+def cadastrar_produto():
+    nome = input("Nome do produto: ").lower()
+    descricao = input("Descrição do produto: ")
     try:
-        quantidade = int(input("Digite a quantidade que deseja adicionar: "))
+        preco = float(input("Preço: "))
+        quantidade = int(input("Quantidade: "))
     except ValueError:
-        print("Quantidade inválida.\n")
+        print("Preço ou quantidade inválidos.\n")
         return
 
-    if quantidade > estoque_disponivel:
-        print(f"Erro: Estoque máximo permitido é {estoque_disponivel}. Tente novamente.\n")
-        return
-
-    cursor.execute(
-        "INSERT INTO titens (nome, preco, quantidade) VALUES (%s, %s, %s)",
-        (nome, preco, quantidade)
-    )
+    cursor.execute("INSERT INTO produtos (nome, descricao, preco, quantidade) VALUES (%s, %s, %s, %s)",
+                   (nome, descricao, preco, quantidade))
     conexao.commit()
+    print(f"Produto '{nome}' cadastrado com sucesso!\n")
 
-    print(f"{quantidade}x {nome} inseridos no banco com sucesso!\n")
+def deletar_produto():
+    nome = input("Digite o nome do produto para deletar: ").lower()
+    cursor.execute("DELETE FROM produtos WHERE nome = %s", (nome,))
+    conexao.commit()
+    print(f"Produto '{nome}' deletado, se existia.\n")
 
-def retirar_produto():
-    cursor.execute("SELECT nome, preco, quantidade FROM titens")
-    produtos = cursor.fetchall()
-
-    if not produtos:
-        print("O carrinho está vazio.\n")
-        return
-
-    print("Itens no carrinho:")
-    for nome, preco, quantidade in produtos:
-        print(f"- {nome} (x{quantidade}) - R$ {preco:.2f} cada")
-
-    nome_remover = input("Digite o nome do produto que deseja remover: ").lower()
-
-    # Verifica se o produto existe
-    produto_encontrado = None
-    for p in produtos:
-        if p[0].lower() == nome_remover:
-            produto_encontrado = p
-            break
-
-    if not produto_encontrado:
-        print("Produto não encontrado no carrinho.\n")
-        return
-
+def comprar_produto():
+    nome = input("Nome do produto que deseja comprar: ").lower()
     try:
-        quantidade_remover = int(input("Digite a quantidade que deseja remover: "))
+        quantidade = int(input("Quantidade a comprar: "))
     except ValueError:
         print("Quantidade inválida.\n")
         return
 
-    nome_produto, preco_produto, quantidade_estoque = produto_encontrado
+    cursor.execute("SELECT quantidade FROM produtos WHERE nome = %s", (nome,))
+    resultado = cursor.fetchone()
 
-    if quantidade_remover > quantidade_estoque:
-        print(f"Quantidade inválida. O carrinho tem apenas {quantidade_estoque} unidades desse produto.\n")
-        return
-
-    nova_quantidade = quantidade_estoque - quantidade_remover
-
-    if nova_quantidade > 0:
-        cursor.execute("UPDATE titens SET quantidade = %s WHERE nome = %s", (nova_quantidade, nome_produto))
+    if resultado:
+        estoque_atual = resultado[0]
+        if quantidade > estoque_atual:
+            print(f"Estoque insuficiente. Disponível: {estoque_atual}\n")
+        else:
+            novo_estoque = estoque_atual - quantidade
+            cursor.execute("UPDATE produtos SET quantidade = %s WHERE nome = %s", (novo_estoque, nome))
+            conexao.commit()
+            print(f"Compra de {quantidade}x '{nome}' realizada com sucesso.\n")
     else:
-        cursor.execute("DELETE FROM titens WHERE nome = %s", (nome_produto,))
+        print("Produto não encontrado.\n")
 
-    conexao.commit()
-    print(f"{quantidade_remover}x {nome_produto} removidos do carrinho.\n")
-
-
-def concluir_compra():
-    cursor.execute("SELECT * FROM titens")
-    produtos = cursor.fetchall()
-    if not produtos:
-        print("Não há produtos no carrinho!")
+def aplicar_desconto():
+    nome = input("Nome do produto para aplicar desconto: ").lower()
+    try:
+        desconto = float(input("Valor do desconto (em reais): "))
+    except ValueError:
+        print("Valor inválido.\n")
         return
-    
-    print("Compra finalizada com sucesso!")
-    
-    # Limpa a tabela titens no banco (zera o carrinho)
-    cursor.execute("DELETE FROM titens")
-    conexao.commit()
-    
-    sair()
 
+    cursor.execute("SELECT preco FROM produtos WHERE nome = %s", (nome,))
+    resultado = cursor.fetchone()
 
-def limpar_carrinho():
-    confirmar = input("Tem certeza que deseja limpar todo o carrinho? (s/n): ").lower()
-    if confirmar == 's':
-        cursor.execute("DELETE FROM titens")
+    if resultado:
+        preco_atual = resultado[0]
+        novo_preco = max(0, preco_atual - desconto)
+        cursor.execute("UPDATE produtos SET preco = %s WHERE nome = %s", (novo_preco, nome))
         conexao.commit()
-        print("Carrinho limpo com sucesso.\n")
+        print(f"Desconto aplicado! Novo preço: R$ {novo_preco:.2f}\n")
     else:
-        print("Operação cancelada.\n")
+        print("Produto não encontrado.\n")
 
+def listar_produtos():
+    cursor.execute("SELECT nome, descricao, preco, quantidade FROM produtos")
+    produtos = cursor.fetchall()
 
-def mostrar_itens():
-    cursor.execute("SELECT nome, preco, quantidade FROM titens")
-    resultados = cursor.fetchall()
-
-    if not resultados:
-        print("Não há itens cadastrados no banco de dados!")
-        return
-
-    print("\nItens cadastrados no banco:")
-    for nome, preco, quantidade in resultados:
-        total = preco * quantidade
-        print(f"- {nome} (x{quantidade}) - Total = R$ {total:.2f}")
-
+    if not produtos:
+        print("Nenhum produto cadastrado.\n")
+    else:
+        print("\nProdutos cadastrados:")
+        for nome, descricao, preco, quantidade in produtos:
+            print(f"- {nome} | {descricao} | R$ {preco:.2f} | Estoque: {quantidade}")
 
 def sair():
-    print("Encerrando o programa. Até mais!")
+    print("Encerrando o sistema.")
     sys.exit()
 
+# Menu principal
 while True:
-    print("\nSeja bem-vindo ao sistema de compras!")
-    print("1 - Adicionar Produtos")
-    print("2 - Retirar Produto")
-    print("3 - Concluir Compra")
-    print("4 - Limpar Carrinho")
-    print("5 - Mostrar Itens")
+    print("\n--- Menu Estoque ---")
+    print("1 - Cadastrar produto")
+    print("2 - Deletar produto")
+    print("3 - Comprar produto")
+    print("4 - Aplicar desconto")
+    print("5 - Listar produtos")
     print("6 - Sair")
-    opcao = input("Digite uma opção: ")
+    opcao = input("Escolha uma opção: ")
 
     if opcao == "1":
-        adicionar_produtos()
+        cadastrar_produto()
     elif opcao == "2":
-        retirar_produto()
+        deletar_produto()
     elif opcao == "3":
-        concluir_compra()
+        comprar_produto()
     elif opcao == "4":
-        limpar_carrinho()
+        aplicar_desconto()
     elif opcao == "5":
-        mostrar_itens()
+        listar_produtos()
     elif opcao == "6":
         sair()
     else:
-        print("Opção inválida. Tente novamente.\n")
+        print("Opção inválida.\n")
